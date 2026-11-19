@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="hu">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Hol üti át?</title>
+<style>
+  :root{--bg:#14171a;--panel:#1f2428;--txt:#e8ecef;--mut:#9aa5ad;--ok:#3ecf6a;--bad:#ef5350;--acc:#f0b429}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font-family:system-ui,Segoe UI,Roboto,sans-serif}
+  #app{max-width:980px;margin:0 auto;padding:16px}
+  header{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+  h1{margin:0;font-size:22px}
+  #score{color:var(--mut)}
+  #info{background:var(--panel);border-radius:8px;padding:12px 14px;margin:12px 0;line-height:1.5}
+  #info b{color:var(--acc)}
+  #wrap{text-align:center}
+  #stage{position:relative;display:inline-block;line-height:0;background:#000;border-radius:8px;overflow:hidden;max-width:100%}
+  #pic{display:block;max-width:100%;max-height:70vh;width:auto;height:auto;cursor:crosshair;user-select:none;-webkit-user-drag:none}
+  #ov{position:absolute;left:0;top:0;pointer-events:none}
+  #dot{position:absolute;width:22px;height:22px;margin:-11px 0 0 -11px;border:3px solid #fff;border-radius:50%;
+       box-shadow:0 0 0 2px #000,0 0 8px #000;pointer-events:none}
+  #dot::after{content:"";position:absolute;left:50%;top:50%;width:4px;height:4px;margin:-2px;background:#fff;border-radius:50%}
+  #dot.ok{border-color:var(--ok)} #dot.bad{border-color:var(--bad)}
+  #msg{min-height:28px;margin:12px 0;font-size:18px}
+  #msg.ok{color:var(--ok)} #msg.bad{color:var(--bad)} #msg.err{color:var(--acc)}
+  button{background:#2d343a;color:var(--txt);border:1px solid #3a434a;border-radius:8px;padding:10px 16px;font-size:16px;cursor:pointer}
+  button:hover{background:#38414a}
+  #next{background:var(--acc);color:#111;border-color:var(--acc);font-weight:600}
+  #buttons{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+  #calib{display:none;margin-top:12px;background:var(--panel);padding:12px;border-radius:8px;font-size:14px;color:var(--mut)}
+  #out{width:100%;height:60px;margin-top:8px;background:#0e1113;color:var(--txt);border:1px solid #3a434a;border-radius:6px;padding:6px;font-family:monospace}
+</style>
+</head>
+<body>
+<div id="app">
+  <header><h1>Hol üti át?</h1><div id="score"></div></header>
+  <div id="info"></div>
+  <div id="wrap">
+    <div id="stage"><img id="pic" alt="tank" draggable="false"><canvas id="ov"></canvas><div id="dot" hidden></div></div>
+  </div>
+  <div id="msg"></div>
+  <div id="buttons">
+    <button id="noPen">Nem lehet átütni</button>
+    <button id="prev" hidden>◀ Előző</button>
+    <button id="next" hidden>Következő ▶</button>
+  </div>
+  <div id="calib">
+    Kalibrációs mód: a piros terület a megoldókép zöld zónája a normál képre vetítve.
+    Nyilak: mozgatás · + / −: nagyítás · x / X: vízszintes nyújtás · y / Y: függőleges nyújtás · Shift: nagyobb lépés.
+    Ha a piros fedi a tank ugyanazon részeit, másold be a lenti sort a tanks.js-ben a tank sorába.
+    <textarea id="out" readonly></textarea>
+  </div>
+</div>
+
+<script src="tanks.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const calib = new URLSearchParams(location.search).has('calib');
+const alignOf = t => {
+  const o = t.align || {};
+  return { a: o.a ?? o.sx ?? 1, b: o.b ?? 0, c: o.c ?? o.dx ?? 0, d: o.d ?? 0, e: o.e ?? o.sy ?? 1, f: o.f ?? o.dy ?? 0 };
+};
+const fileOf = t => t.file || t.name;
+
+let order = [], pos = 0, score = 0, answered = 0;
+let cur = null, mk = null, solvedUrl = '', locked = false, tmpAlign = null, maskCanvas = null;
+
+const url = (name, solved) => encodeURI(CONFIG.imageDir + name + (solved ? CONFIG.solvedSuffix : '') + CONFIG.ext);
+const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+const msg = (t, c) => { $('msg').textContent = t; $('msg').className = c || ''; };
+
+function loadImg(src) {
+  return new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error('nem található: ' + decodeURI(src))); i.src = src; });
+}
+function setPic(src) {
+  return new Promise((res, rej) => { const p = $('pic'); p.onload = res; p.onerror = () => rej(new Error('nem található: ' + decodeURI(src))); p.src = src; });
+}
+
+function buildMask(img) {
+  const c = document.createElement('canvas');
+  c.width = img.naturalWidth; c.height = img.naturalHeight;
+  const x = c.getContext('2d', { willReadFrequently: true });
+  x.drawImage(img, 0, 0);
+  const d = x.getImageData(0, 0, c.width, c.height).data;
+  const m = new Uint8Array(c.width * c.height);
+  let count = 0;
+  for (let i = 0, p = 0; i < m.length; i++, p += 4) {
+    const r = d[p], g = d[p + 1], b = d[p + 2];
+    if (g > 140 && g - Math.max(r, b) > 70) { m[i] = 1; count++; }
+  }
+  return { w: c.width, h: c.height, m, count };
+}
+
+function inZone(u, v, a) {
+  const us = u * a.a + v * a.b + a.c, vs = u * a.d + v * a.e + a.f;
+  const cx = Math.round(us * mk.w), cy = Math.round(vs * mk.h), R = 2;
+  for (let y = cy - R; y <= cy + R; y++)
+    for (let x = cx - R; x <= cx + R; x++)
+      if (x >= 0 && y >= 0 && x < mk.w && y < mk.h && mk.m[y * mk.w + x]) return true;
+  return false;
+}
+
+function updateScore() {
+  $('score').textContent = calib ? 'Kalibráció' : `Kör: ${Math.min(pos + 1, order.length)}/${order.length} · Pont: ${score}`;
+}
+
+function infoText() {
+  return `Célpont: <b>${cur.name}</b><br>Lövő: <b>${cur.shooter}</b> (${cur.country}) · Lövedék: <b>${cur.shell}</b><br>Kattints oda, ahol szerinted átüti a páncélt.`;
+}
+
+async function loadRound(i) {
+  cur = TANKS[i]; mk = null; locked = false; solvedUrl = ''; tmpAlign = null;
+  $('dot').hidden = true; $('dot').className = '';
+  $('next').hidden = true; $('noPen').hidden = calib; $('prev').hidden = !calib;
+  if (calib) { $('next').hidden = false; }
+  $('info').innerHTML = infoText();
+  updateScore();
+  msg('Betöltés…');
+  try {
+    await setPic(url(fileOf(cur)));
+    if (!cur.troll) {
+      try {
+        const img = await loadImg(url(cur.solvedFile || fileOf(cur), true));
+        solvedUrl = url(cur.solvedFile || fileOf(cur), true);
+        const m = buildMask(img);
+        if (m.count > 0) mk = m;
+      } catch (e) {
+        if (e.message.indexOf('nem található') === -1) throw e;
+        solvedUrl = '';
+      }
+    }
+  } catch (e) {
+    const hint = /tainted|insecure|SecurityError/i.test(e.name + e.message)
+      ? ' (a képeket helyi szerverről kell megnyitni, pl. python -m http.server)' : '';
+    msg('Hiba: ' + e.message + hint, 'err');
+    return;
+  }
+  msg(calib ? (mk ? '' : 'Ennek a tanknak nincs zöld zónája (troll).') : '');
+  if (calib) { tmpAlign = alignOf(cur); drawCalib(); }
+}
+
+function reveal(u, v, hit, text) {
+  locked = true; answered++;
+  if (hit) score++;
+  msg(text, hit ? 'ok' : 'bad');
+  updateScore();
+  const finish = () => {
+    const dot = $('dot');
+    if (u != null) {
+      const a = alignOf(cur);
+      const showSolved = !!solvedUrl;
+      const pu = showSolved ? u * a.a + v * a.b + a.c : u, pv = showSolved ? u * a.d + v * a.e + a.f : v;
+      dot.style.left = pu * 100 + '%'; dot.style.top = pv * 100 + '%';
+      dot.className = hit ? 'ok' : 'bad'; dot.hidden = false;
+    } else dot.hidden = true;
+    $('noPen').hidden = true; $('next').hidden = false;
+    $('next').textContent = pos + 1 >= order.length ? 'Eredmény' : 'Következő ▶';
+  };
+  if (solvedUrl) setPic(solvedUrl).then(finish); else finish();
+}
+
+$('stage').addEventListener('click', e => {
+  if (calib || locked || !cur) return;
+  const r = $('pic').getBoundingClientRect();
+  const u = (e.clientX - r.left) / r.width, v = (e.clientY - r.top) / r.height;
+  if (u < 0 || u > 1 || v < 0 || v > 1) return;
+  const dot = $('dot');
+  dot.style.left = u * 100 + '%'; dot.style.top = v * 100 + '%'; dot.hidden = false;
+  if (!mk) { reveal(u, v, false, 'Hibás tipp.'); return; }
+  const hit = inZone(u, v, alignOf(cur));
+  reveal(u, v, hit, hit ? 'Találat!' : 'Nem talált.');
+});
+
+$('noPen').addEventListener('click', () => {
+  if (locked || !cur) return;
+  if (!mk) reveal(null, null, true, 'Helyes!');
+  else reveal(null, null, false, 'Nem jó.');
+});
+
+$('next').addEventListener('click', () => {
+  if (calib) { const cl = window._calibList; pos = cl[(cl.indexOf(pos) + 1) % cl.length]; loadRound(pos); return; }
+  pos++;
+  if (pos >= order.length) { end(); return; }
+  loadRound(order[pos]);
+});
+$('prev').addEventListener('click', () => { const cl = window._calibList; pos = cl[(cl.indexOf(pos) - 1 + cl.length) % cl.length]; loadRound(pos); });
+
+function end() {
+  cur = null;
+  $('stage').hidden = true; $('noPen').hidden = true; $('next').hidden = true;
+  $('info').innerHTML = `Vége! Eredmény: <b>${score} / ${order.length}</b>`;
+  msg('');
+  const b = document.createElement('button');
+  b.id = 'again'; b.textContent = 'Újra';
+  b.onclick = () => { b.remove(); $('stage').hidden = false; startGame(); };
+  $('buttons').appendChild(b);
+}
+
+// Csak azok a tankok kerülnek be, amelyeknek megvan a normál képe (a hiányzókat a konzolban jelzi)
+async function available() {
+  const ok = [];
+  await Promise.all(TANKS.map((t, i) => loadImg(url(fileOf(t))).then(() => ok.push(i), () => console.warn('Hiányzó kép, kihagyva:', url(fileOf(t))))));
+  return ok.sort((a, b) => a - b);
+}
+
+async function startGame() {
+  msg('Képek ellenőrzése…');
+  const ok = await available();
+  if (!ok.length) { msg('Nincs egyetlen kép sem az ' + CONFIG.imageDir + ' mappában (lásd tanks.js).', 'err'); return; }
+  order = shuffle(ok); pos = 0; score = 0; answered = 0;
+  loadRound(order[0]);
+}
+
+// ===== Kalibráció =====
+function drawCalib() {
+  const p = $('pic'), ov = $('ov');
+  const W = p.clientWidth, H = p.clientHeight;
+  ov.width = W; ov.height = H; ov.style.width = W + 'px'; ov.style.height = H + 'px';
+  const ctx = ov.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+  if (!mk) { $('out').value = ''; return; }
+  if (!maskCanvas || maskCanvas._for !== fileOf(cur)) {
+    const c = document.createElement('canvas'); c.width = mk.w; c.height = mk.h; c._for = fileOf(cur);
+    const x = c.getContext('2d'), im = x.createImageData(mk.w, mk.h);
+    for (let i = 0; i < mk.m.length; i++) if (mk.m[i]) { im.data[i * 4] = 255; im.data[i * 4 + 3] = 150; }
+    x.putImageData(im, 0, 0); maskCanvas = c;
+  }
+  const a = tmpAlign;
+  // megoldókép törtkoordináta (us,vs) -> normál kép törtkoordináta (u,v) = inverz affin
+  const det = a.a * a.e - a.b * a.d;
+  const ia = a.e / det, ib = -a.b / det, id = -a.d / det, ie = a.a / det;
+  const ic = -(ia * a.c + ib * a.f), iff = -(id * a.c + ie * a.f);
+  // kanvász pixel (px,py) a megoldóképen: us = px/mk.w, vs = py/mk.h
+  ctx.setTransform(ia * W / mk.w, id * H / mk.w, ib * W / mk.h, ie * H / mk.h, ic * W, iff * H);
+  ctx.drawImage(maskCanvas, 0, 0);
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  const f = n => +n.toFixed(5);
+  $('out').value = `align: { a: ${f(a.a)}, b: ${f(a.b)}, c: ${f(a.c)}, d: ${f(a.d)}, e: ${f(a.e)}, f: ${f(a.f)} }`;
+}
+
+if (calib) {
+  $('calib').style.display = 'block';
+  window.addEventListener('resize', () => cur && drawCalib());
+  window.addEventListener('keydown', e => {
+    if (!tmpAlign) return;
+    const s = e.shiftKey ? 0.02 : 0.004, a = tmpAlign;
+    switch (e.key) {
+      case 'ArrowLeft': a.c += s; break;
+      case 'ArrowRight': a.c -= s; break;
+      case 'ArrowUp': a.f += s; break;
+      case 'ArrowDown': a.f -= s; break;
+      case '+': case '=': a.a /= 1 + s; a.b /= 1 + s; a.d /= 1 + s; a.e /= 1 + s; break;
+      case '-': a.a *= 1 + s; a.b *= 1 + s; a.d *= 1 + s; a.e *= 1 + s; break;
+      case 'x': a.a *= 1 + s; a.d *= 1 + s; break; case 'X': a.a /= 1 + s; a.d /= 1 + s; break;
+      case 'y': a.e *= 1 + s; a.b *= 1 + s; break; case 'Y': a.e /= 1 + s; a.b /= 1 + s; break;
+      default: return;
+    }
+    e.preventDefault(); drawCalib();
+  });
+  available().then(ok => { if (!ok.length) { msg('Nincs kép az ' + CONFIG.imageDir + ' mappában.', 'err'); return; } window._calibList = ok; pos = ok[0]; loadRound(pos); });
+} else {
+  startGame();
+}
+</script>
+</body>
+</html>
