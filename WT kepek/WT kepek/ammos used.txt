@@ -1,0 +1,54 @@
+USA
+
+M4A1 Sherman --> Japan M24 M61
+M4A2 Sherman --> France M4A4 M61
+T1E1 (90) --> USA M4A2 (76) W M79
+M18 GMC --> Sweden T34 BR-350A
+M22 --> Italy M13 40 Gran. Perf mod.35
+M4A3E2 (76) W --> G. Britain Centurion Mk1 Shot Mk.6
+T34 (USA) --> Super Hellcat M82
+M60A2 --> USSR BMP-2 9M113
+M1A2 Abrams --> China VT5 DTW2-105
+M1A1 HC (Premium) --> Germany Leopard 2A4 DM12
+T29 (Premium) --> Germany Flakpanzer 1 20mm API-T
+
+
+China
+
+T34-85 GAI --> USSR T-34-85 BR-365
+M42 (China) --> Germany Brummbar I.Gr.39 Hi A
+ISU152 (China) --> USA M4A2 (76) W M79
+M64 (China, Premium) --> Centurion Action X Shot Mk.1
+ZTZ59A --> Israel Magach 3 (ERA) M39A2
+CM11 --> Germany Class 3 \ TH800  DM512 
+ZDB04 --> G. Britain FV4005 Shell L1
+MBT-2000 --> Germany Boxer MGS DM63
+
+
+Japan
+
+Chi-Nu --> Italy 75 \ 46 M43  G. Perf. mod.39
+M4A3 (76) W --> Germany T34 747 (r) BR-350A
+Type 16 (P) --> China Object 122MT "MC" 120-I
+Type 74 (F) --> Germany VT1-2 DM13
+TKX --> Sweden Strv 122B+
+
+
+Great Britain
+
+Matilda III --> France M10 GMC M79
+Churcill VII --> Israel Rochev M107
+Tortoise --> M22 M74B1
+Olifant Mk.2 --> Italy Palmaria M107
+Challenger 2E --> G. Britain Chieftain Mk 3 Shot L15A3
+Bhishma TWMP (Squad) --> L3\33 CC Perforante mod.35
+
+
+USSR
+
+Object 279 --> USA M22 M74B1
+
+
+
+
+
